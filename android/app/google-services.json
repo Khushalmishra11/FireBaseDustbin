@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "343395807913",
+    "project_id": "fir-tableapp-36eac",
+    "storage_bucket": "fir-tableapp-36eac.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:343395807913:android:21068839b316dc3184efb8",
+        "android_client_info": {
+          "package_name": "com.firebasetableapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBgwezM7TXElBNTzB5RWM2lO7P0QZhW1_s"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
