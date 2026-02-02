@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "dustbin_level": {
+      ".read": true,
+      ".write": true
+    },
+    "user_devices": {
+      ".read": true,
+      ".write": true
+    },
+    "notifications_log": {
+      ".read": true,
+      ".write": "root.child('functions').val() === true"
+    }
+  }
+}

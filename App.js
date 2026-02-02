@@ -1,6 +1,7 @@
 import React, {useEffect, useState} from 'react';
-import {View, Text, StyleSheet, ActivityIndicator, ScrollView} from 'react-native';
+import {View, Text, StyleSheet, ActivityIndicator, ScrollView, Alert, PermissionsAndroid, Platform} from 'react-native';
 import database from '@react-native-firebase/database';
+import messaging from '@react-native-firebase/messaging';
 
 export default function App() {
   const [allBins, setAllBins] = useState({});
@@ -9,7 +10,114 @@ export default function App() {
 
   useEffect(() => {
     fetchDustbins();
+    
+    // Setup FCM notifications
+    setupFCMNotifications();
   }, []);
+
+  // ========== FCM NOTIFICATION SETUP ==========
+  const setupFCMNotifications = async () => {
+    try {
+      // Request notification permission (Android 13+)
+      if (Platform.OS === 'android' && Platform.Version >= 33) {
+        const granted = await PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+          {
+            title: 'Dustbin Level Notifications',
+            message: 'We need permission to send you dustbin fill level alerts',
+            buttonNeutral: 'Ask Me Later',
+            buttonNegative: 'Cancel',
+            buttonPositive: 'OK',
+          },
+        );
+        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
+          console.log('Notification permission denied');
+          return;
+        }
+      }
+
+      // Get FCM token
+      const token = await messaging().getToken();
+      console.log('FCM Token:', token);
+
+      // Register token with backend
+      await registerFCMTokenWithBackend(token);
+
+      // Handle foreground notifications
+      const unsubscribeForeground = messaging().onMessage(async remoteMessage => {
+        console.log('Foreground notification received:', remoteMessage);
+        
+        const title = remoteMessage.notification?.title || 'Dustbin Level Alert';
+        const body = remoteMessage.notification?.body || 'Check your bin fill level';
+        const level = remoteMessage.data?.level;
+        const status = remoteMessage.data?.status;
+
+        // Show alert with notification details
+        Alert.alert(
+          title,
+          body + (level ? `\n\nCurrent Level: ${level}%\nStatus: ${status}` : ''),
+          [{ text: 'OK' }],
+        );
+
+        // You can also update UI state here if needed
+      });
+
+      // Handle background notification tap
+      messaging().onNotificationOpenedApp(remoteMessage => {
+        console.log('Notification opened app:', remoteMessage);
+        // Handle navigation or UI update when user taps notification
+      });
+
+      // Check if app was opened from notification
+      const initialNotification = await messaging().getInitialNotification();
+      if (initialNotification) {
+        console.log('App opened from notification:', initialNotification);
+      }
+
+      // Refresh token when it changes
+      const unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
+        console.log('FCM Token refreshed:', token);
+        registerFCMTokenWithBackend(token);
+      });
+
+      return () => {
+        unsubscribeForeground();
+        unsubscribeTokenRefresh();
+      };
+    } catch (error) {
+      console.error('Error setting up FCM:', error);
+    }
+  };
+
+  // Register FCM token with backend Cloud Function
+  const registerFCMTokenWithBackend = async (token) => {
+    try {
+      // Get device ID (using a unique ID or your nodeMCU device ID)
+      const deviceId = 'dustbin_01'; // Change this to your actual device ID
+
+      const response = await fetch(
+        'https://YOUR_REGION-YOUR_PROJECT_ID.cloudfunctions.net/registerFCMToken',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            deviceId: deviceId,
+            token: token,
+            userId: 'user123', // Optional: add your user ID
+          }),
+        },
+      );
+
+      const result = await response.json();
+      console.log('FCM token registered:', result);
+    } catch (error) {
+      console.error('Error registering FCM token:', error);
+    }
+  };
+
+  // ========== END FCM SETUP ==========
 
   const fetchDustbins = async () => {
     try {
