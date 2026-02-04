@@ -73,3 +73,12 @@ yarn-error.log
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Firebase sensitive files
+serviceAccountKey.json
+android/app/google-services.json
+
+# Lock files
+package-lock.json
+yarn.lock
+functions/package-lock.json
