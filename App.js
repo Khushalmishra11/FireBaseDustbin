@@ -1,216 +1,185 @@
 import React, {useEffect, useState} from 'react';
-import {View, Text, StyleSheet, ActivityIndicator, ScrollView, Alert, PermissionsAndroid, Platform} from 'react-native';
+import {View, Text, StyleSheet, ActivityIndicator, ScrollView, PermissionsAndroid, Platform, Alert} from 'react-native';
 import database from '@react-native-firebase/database';
 import messaging from '@react-native-firebase/messaging';
+
+// Handle background messages
+messaging().setBackgroundMessageHandler(async remoteMessage => {
+  console.log('Background notification:', remoteMessage.notification?.title);
+});
 
 export default function App() {
   const [allBins, setAllBins] = useState({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [fcmToken, setFcmToken] = useState(null);
 
   useEffect(() => {
-    fetchDustbins();
-    
-    // Setup FCM notifications
-    setupFCMNotifications();
-  }, []);
-
-  // ========== FCM NOTIFICATION SETUP ==========
-  const setupFCMNotifications = async () => {
-    try {
-      // Request notification permission (Android 13+)
+    // Request notification permission
+    const requestNotificationPermission = async () => {
       if (Platform.OS === 'android' && Platform.Version >= 33) {
-        const granted = await PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
-          {
-            title: 'Dustbin Level Notifications',
-            message: 'We need permission to send you dustbin fill level alerts',
-            buttonNeutral: 'Ask Me Later',
-            buttonNegative: 'Cancel',
-            buttonPositive: 'OK',
-          },
-        );
-        if (granted !== PermissionsAndroid.RESULTS.GRANTED) {
-          console.log('Notification permission denied');
-          return;
+        try {
+          const granted = await PermissionsAndroid.request(
+            PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+          );
+          console.log('Notification permission:', granted);
+        } catch (err) {
+          console.error('Permission error:', err);
         }
       }
+    };
 
-      // Get FCM token
-      const token = await messaging().getToken();
-      console.log('FCM Token:', token);
+    requestNotificationPermission();
 
-      // Register token with backend
-      await registerFCMTokenWithBackend(token);
-
-      // Handle foreground notifications
-      const unsubscribeForeground = messaging().onMessage(async remoteMessage => {
-        console.log('Foreground notification received:', remoteMessage);
-        
-        const title = remoteMessage.notification?.title || 'Dustbin Level Alert';
-        const body = remoteMessage.notification?.body || 'Check your bin fill level';
-        const level = remoteMessage.data?.level;
-        const status = remoteMessage.data?.status;
-
-        // Show alert with notification details
-        Alert.alert(
-          title,
-          body + (level ? `\n\nCurrent Level: ${level}%\nStatus: ${status}` : ''),
-          [{ text: 'OK' }],
-        );
-
-        // You can also update UI state here if needed
-      });
-
-      // Handle background notification tap
-      messaging().onNotificationOpenedApp(remoteMessage => {
-        console.log('Notification opened app:', remoteMessage);
-        // Handle navigation or UI update when user taps notification
-      });
-
-      // Check if app was opened from notification
-      const initialNotification = await messaging().getInitialNotification();
-      if (initialNotification) {
-        console.log('App opened from notification:', initialNotification);
+    // Get FCM token
+    const getFCMToken = async () => {
+      try {
+        const token = await messaging().getToken();
+        if (token) {
+          setFcmToken(token);
+          await database().ref('/fcmToken').set(token);
+          console.log('FCM Token saved to database');
+        }
+      } catch (err) {
+        console.error('FCM token error:', err);
       }
+    };
 
-      // Refresh token when it changes
-      const unsubscribeTokenRefresh = messaging().onTokenRefresh(token => {
-        console.log('FCM Token refreshed:', token);
-        registerFCMTokenWithBackend(token);
-      });
+    getFCMToken();
 
-      return () => {
-        unsubscribeForeground();
-        unsubscribeTokenRefresh();
-      };
-    } catch (error) {
-      console.error('Error setting up FCM:', error);
-    }
-  };
-
-  // Register FCM token with backend Cloud Function
-  const registerFCMTokenWithBackend = async (token) => {
-    try {
-      // Get device ID (using a unique ID or your nodeMCU device ID)
-      const deviceId = 'dustbin_01'; // Change this to your actual device ID
-
-      const response = await fetch(
-        'https://YOUR_REGION-YOUR_PROJECT_ID.cloudfunctions.net/registerFCMToken',
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            deviceId: deviceId,
-            token: token,
-            userId: 'user123', // Optional: add your user ID
-          }),
-        },
+    // Listen for foreground messages - SHOW POPUP ALERT
+    const unsubscribeForeground = messaging().onMessage(async remoteMessage => {
+      console.log('Notification received:', remoteMessage.notification?.title);
+      Alert.alert(
+        remoteMessage.notification?.title || 'Dustbin Alert',
+        remoteMessage.notification?.body || 'Check your dustbin',
+        [{text: 'OK', onPress: () => console.log('Alert dismissed')}]
       );
+    });
 
-      const result = await response.json();
-      console.log('FCM token registered:', result);
-    } catch (error) {
-      console.error('Error registering FCM token:', error);
-    }
-  };
+    // Listen for token refresh
+    const unsubscribeTokenRefresh = messaging().onTokenRefresh(async newToken => {
+      setFcmToken(newToken);
+      await database().ref('/fcmToken').set(newToken);
+      console.log('Token refreshed');
+    });
 
-  // ========== END FCM SETUP ==========
+    return () => {
+      unsubscribeForeground();
+      unsubscribeTokenRefresh();
+    };
+  }, []);
 
-  const fetchDustbins = async () => {
-    try {
-      setLoading(true);
-      const snapshot = await database().ref('dustbins').once('value');
-      
-      console.log('Snapshot exists:', snapshot.exists());
-      console.log('Snapshot value:', snapshot.val());
+  useEffect(() => {
+    // Real-time database listener
+    const dbRef = database().ref('dustbins');
+    
+    const onValueChange = snapshot => {
+      setLoading(false);
       
       if (snapshot.exists()) {
         setAllBins(snapshot.val());
         setError(null);
       } else {
-        setError('No data found at dustbins');
+        setError('No data found');
         setAllBins({});
       }
-    } catch (err) {
-      console.error('Firebase fetch error:', err);
+    };
+
+    const onError = err => {
+      console.error('Firebase error:', err);
       setError(err.message);
-      setAllBins({});
-    } finally {
       setLoading(false);
+    };
+
+    dbRef.on('value', onValueChange, onError);
+    return () => dbRef.off('value', onValueChange);
+  }, []);
+
+  const renderContent = () => {
+    if (loading) {
+      return (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+          <Text style={styles.loadingText}>Loading...</Text>
+        </View>
+      );
     }
+
+    if (error) {
+      return (
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>{error}</Text>
+        </View>
+      );
+    }
+
+    const binEntries = Object.entries(allBins);
+    
+    if (binEntries.length === 0) {
+      return (
+        <View style={styles.centerContainer}>
+          <Text style={styles.errorText}>No dustbins available</Text>
+        </View>
+      );
+    }
+
+    return (
+      <ScrollView style={styles.scrollContainer}>
+        <View style={styles.container}>
+          <Text style={styles.title}>Dustbin Monitor</Text>
+          <Text style={styles.subtitle}>Total Bins: {binEntries.length}</Text>
+          
+          {fcmToken && (
+            <View style={styles.fcmStatusCard}>
+              <Text style={styles.fcmStatusLabel}>✓ Notifications Enabled</Text>
+              <Text style={styles.fcmTokenPreview}>Token: {fcmToken.substring(0, 20)}...</Text>
+            </View>
+          )}
+          
+          {binEntries.map(([binName, binData]) => {
+            const level = binData?.level ?? 0;
+            const status = binData?.status ?? 'unknown';
+            
+            return (
+              <View key={binName} style={styles.binCard}>
+                <Text style={styles.binTitle}>{binName.toUpperCase()}</Text>
+                
+                <View style={styles.dataRow}>
+                  <Text style={styles.label}>Level:</Text>
+                  <Text style={[styles.levelValue, {color: getColorByLevel(level)}]}>
+                    {level}%
+                  </Text>
+                </View>
+                
+                <View style={styles.dataRow}>
+                  <Text style={styles.label}>Status:</Text>
+                  <View style={[styles.statusBadge, getStatusBgColor(status)]}>
+                    <Text style={styles.statusText}>
+                      {status.replace('_', ' ').toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      </ScrollView>
+    );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#0000ff" />
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>{error}</Text>
-      </View>
-    );
-  }
-
-  const binEntries = Object.entries(allBins || {});
-
-  if (binEntries.length === 0) {
-    return (
-      <View style={styles.centerContainer}>
-        <Text style={styles.errorText}>No dustbins available</Text>
-      </View>
-    );
-  }
-
-  return (
-    <ScrollView style={styles.scrollContainer}>
-      <View style={styles.container}>
-        <Text style={styles.title}>Dustbin Monitor</Text>
-        <Text style={styles.subtitle}>Total Bins: {binEntries.length}</Text>
-        
-        {binEntries.map(([binName, binData]) => (
-          <View key={binName} style={styles.binCard}>
-            <Text style={styles.binTitle}>{binName.toUpperCase()}</Text>
-            
-            <View style={styles.dataRow}>
-              <Text style={styles.label}>Level:</Text>
-              <Text style={[styles.levelValue, {color: getColorByLevel(binData?.level)}]}>
-                {binData?.level !== undefined ? `${binData.level}%` : 'N/A'}
-              </Text>
-            </View>
-            
-            <View style={styles.dataRow}>
-              <Text style={styles.label}>Status:</Text>
-              <View style={[styles.statusBadge, getStatusBgColor(binData?.status)]}>
-                <Text style={styles.statusText}>
-                  {binData?.status ? binData.status.replace('_', ' ').toUpperCase() : 'N/A'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        ))}
-      </View>
-    </ScrollView>
-  );
+  return <View style={styles.mainContainer}>{renderContent()}</View>;
 }
 
-const getColorByLevel = (level) => {
-  if (level === undefined || level === null) return '#999';
-  if (level >= 80) return '#FF3B30';
-  if (level >= 50) return '#FF9500';
-  return '#34C759';
+const getColorByLevel = level => {
+  if (level >= 80) return '#FF0000';
+  if (level >= 60) return '#FFA500';
+  return '#4CAF50';
 };
 
-const getStatusBgColor = (status) => {
-  if (status === 'full') return {backgroundColor: '#FF3B30'};
+const getStatusBgColor = status => {
+  if (status === 'critical') return {backgroundColor: '#FF0000'};
+  if (status === 'warning') return {backgroundColor: '#FFA500'};
   if (status === 'not_full') return {backgroundColor: '#34C759'};
   return {backgroundColor: '#999'};
 };
@@ -225,6 +194,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#f5f5f5',
+  },
+  mainContainer: {
+    flex: 1,
   },
   container: {
     padding: 16,
@@ -242,6 +214,25 @@ const styles = StyleSheet.create({
     color: '#666',
     textAlign: 'center',
     marginBottom: 16,
+  },
+  fcmStatusCard: {
+    backgroundColor: '#d4edda',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: '#28a745',
+  },
+  fcmStatusLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#155724',
+  },
+  fcmTokenPreview: {
+    fontSize: 11,
+    color: '#155724',
+    marginTop: 6,
+    fontFamily: 'monospace',
   },
   binCard: {
     backgroundColor: '#fff',
@@ -292,7 +283,8 @@ const styles = StyleSheet.create({
   },
   errorText: {
     fontSize: 16,
-    color: '#FF3B30',
+    color: '#FF0000',
+    fontWeight: '600',
     textAlign: 'center',
   },
 });

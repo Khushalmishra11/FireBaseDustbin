@@ -1,97 +1,406 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Firebase Dustbin Monitoring System
 
-# Getting Started
+Real-time Android app with Node.js backend server for monitoring dustbin fill levels using NodeMCU sensors, Firebase Realtime Database, and Push Notifications.
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+---
 
-## Step 1: Start Metro
+## 📋 System Overview
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+- **Frontend**: React Native (Android)
+- **Backend**: Node.js server (Firebase Admin SDK)
+- **Database**: Firebase Realtime Database
+- **Notifications**: Firebase Cloud Messaging (FCM)
+- **Hardware**: NodeMCU ESP8266 with Ultrasonic Sensor
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+---
 
-```sh
-# Using npm
+## 🔧 Prerequisites
+
+### Required Software
+
+1. **Node.js** (v18 or higher)
+   - Download: https://nodejs.org/
+   - Verify: `node --version`
+
+2. **Java Development Kit (JDK 17)**
+   - Download: https://www.microsoft.com/openjdk
+   - Set `JAVA_HOME` environment variable
+
+3. **Android Studio**
+   - Download: https://developer.android.com/studio
+   - Install Android SDK (API Level 34+)
+   - Create Android Virtual Device (AVD) or connect physical device
+
+4. **Git** (optional but recommended)
+   - Download: https://git-scm.com/
+
+### Firebase Setup
+
+1. Create Firebase project at https://console.firebase.google.com
+2. Enable **Realtime Database**
+3. Enable **Cloud Messaging**
+4. Download `google-services.json` and place in `/android/app/`
+5. Download **Service Account Key**:
+   - Go to Project Settings → Service Accounts
+   - Click "Generate new private key"
+   - Save as `serviceAccountKey.json` in project root
+
+---
+
+## 📥 Installation Steps
+
+### 1. Clone/Download Project
+
+```bash
+cd "d:\studyMaterial\1. Capstone\FirebaseTableApp"
+```
+
+### 2. Install Dependencies
+
+```bash
+npm install --legacy-peer-deps
+```
+
+### 3. Configure Firebase
+
+#### A. Add google-services.json
+Place your Firebase `google-services.json` file in:
+```
+android/app/google-services.json
+```
+
+#### B. Add Service Account Key
+Place your service account JSON file as:
+```
+serviceAccountKey.json
+```
+
+#### C. Update Firebase Project ID
+Edit `.firebaserc`:
+```json
+{
+  "projects": {
+    "default": "your-firebase-project-id"
+  }
+}
+```
+
+---
+
+## 🚀 Running the Application
+
+### Method 1: Run Everything (Recommended)
+
+Open **3 separate PowerShell terminals**:
+
+#### Terminal 1: Metro Bundler
+```powershell
+cd "d:\studyMaterial\1. Capstone\FirebaseTableApp"
+npm start
+```
+
+#### Terminal 2: Backend Server
+```powershell
+cd "d:\studyMaterial\1. Capstone\FirebaseTableApp"
+$env:FIREBASE_DATABASE_URL = "https://your-project-id-default-rtdb.firebaseio.com"
+node server.js
+```
+Replace `your-project-id` with your actual Firebase project ID.
+
+#### Terminal 3: Android App
+```powershell
+cd "d:\studyMaterial\1. Capstone\FirebaseTableApp"
+$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.18.8-hotspot"
+npx react-native run-android
+```
+
+Adjust `JAVA_HOME` path to match your JDK installation.
+
+### Method 2: Run Individual Components
+
+#### Metro Bundler Only
+```powershell
+npm start
+```
+
+#### Backend Server Only
+```powershell
+$env:FIREBASE_DATABASE_URL = "https://your-project-id-default-rtdb.firebaseio.com"
+node server.js
+```
+
+#### Android App Only (Metro must be running)
+```powershell
+$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.18.8-hotspot"
+npx react-native run-android
+```
+
+---
+
+## 🗄️ Firebase Database Structure
+
+```json
+{
+  "dustbins": {
+    "bin1": {
+      "level": 95
+    },
+    "bin2": {
+      "level": 9
+    }
+  },
+  "fcmToken": "cM7axQBbRL6PYaUIZ6CxBc...",
+  "lastNotified": {
+    "bin1": "NONE",
+    "bin2": "FULL"
+  }
+}
+```
+
+### Structure Details
+
+- **`/dustbins/{dustbinId}/level`**: Number (0-100) - sensor reading
+- **`/fcmToken`**: String - Android device FCM token (auto-set by app)
+- **`/lastNotified/{dustbinId}`**: String - Last notification state
+
+---
+
+## 📱 Notification Logic
+
+### States
+
+- **FULL**: `level ≤ 10` → Sends "Dustbin Full 🚮"
+- **ABOUT_TO_FULL**: `level ≤ 20` → Sends "Dustbin Almost Full ⚠️"
+- **NONE**: `level > 20` → No notification
+
+### Rules
+
+- Notifications sent **only when state changes**
+- Prevents duplicate/spam notifications
+- Server logs all state transitions
+
+---
+
+## 🔌 NodeMCU Hardware Setup
+
+### Required Components
+
+- NodeMCU ESP8266
+- HC-SR04 Ultrasonic Sensor
+- Jumper wires
+
+### Connections
+
+| Sensor Pin | NodeMCU Pin |
+|------------|-------------|
+| VCC        | 3.3V        |
+| GND        | GND         |
+| TRIG       | D1 (GPIO5)  |
+| ECHO       | D2 (GPIO4)  |
+
+### Upload Code
+
+1. Open `NODEMCU_CODE.ino` in Arduino IDE
+2. Update WiFi credentials:
+   ```cpp
+   #define WIFI_SSID "YourWiFiName"
+   #define WIFI_PASSWORD "YourWiFiPassword"
+   ```
+3. Update Firebase details:
+   ```cpp
+   #define FIREBASE_HOST "your-project-id-default-rtdb.firebaseio.com"
+   #define FIREBASE_AUTH "your-database-secret"
+   ```
+4. Select Board: NodeMCU 1.0 (ESP-12E Module)
+5. Upload to NodeMCU
+
+---
+
+## 🐛 Troubleshooting
+
+### Android Build Fails
+
+```powershell
+# Clean build
+cd android
+.\gradlew clean
+cd ..
+
+# Rebuild
+$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.18.8-hotspot"
+npx react-native run-android
+```
+
+### Metro Bundler Port Conflict
+
+```powershell
+# Kill existing Metro process
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Restart
+npm start
+```
+
+### Backend Server Not Running
+
+```powershell
+# Stop all Node processes
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Restart server
+$env:FIREBASE_DATABASE_URL = "https://your-project-id-default-rtdb.firebaseio.com"
+node server.js
+```
+
+### No Notifications Received
+
+1. **Check FCM Token**:
+   - Open app on Android
+   - Look for "✓ Notifications Enabled" banner
+   - Check Firebase Console: `/fcmToken` should exist
+
+2. **Check Server Logs**:
+   - Server should log: `✓ Notification sent for bin1: FULL`
+   - If no logs, server may not be running
+
+3. **Check Notification Permission**:
+   - Android Settings → Apps → FirebaseTableApp → Notifications → Enable
+
+4. **Test Manually**:
+   - Change `/dustbins/bin1/level` from 50 → 8 in Firebase Console
+   - Should trigger FULL notification
+
+### Firebase Permission Denied
+
+Update Realtime Database Rules (for development):
+```json
+{
+  "rules": {
+    ".read": true,
+    ".write": true
+  }
+}
+```
+
+⚠️ **Note**: Use proper authentication rules in production.
+
+---
+
+## 📁 Project Structure
+
+```
+FirebaseTableApp/
+├── android/                  # Android native code
+│   └── app/
+│       └── google-services.json
+├── functions/                # Firebase Cloud Functions (optional)
+│   └── index.js
+├── ios/                      # iOS native code (unused)
+├── node_modules/             # Dependencies
+├── App.js                    # Main React Native app
+├── server.js                 # Node.js backend server
+├── serviceAccountKey.json    # Firebase admin credentials (DO NOT COMMIT)
+├── package.json              # Dependencies
+├── firebase.json             # Firebase config
+├── .firebaserc               # Firebase project
+├── NODEMCU_CODE.ino          # NodeMCU firmware
+└── README.md                 # This file
+```
+
+---
+
+## 🔐 Security Notes
+
+**DO NOT COMMIT** these files to Git:
+- `serviceAccountKey.json`
+- `google-services.json`
+- `node_modules/`
+
+Add to `.gitignore`:
+```
+serviceAccountKey.json
+android/app/google-services.json
+node_modules/
+```
+
+---
+
+## 📊 Testing the System
+
+### 1. Start All Services
+
+Ensure Metro, Backend Server, and Android App are running.
+
+### 2. Simulate Sensor Data
+
+In Firebase Console, manually update:
+```
+/dustbins/bin1/level = 50  (NONE - no notification)
+/dustbins/bin1/level = 15  (ABOUT_TO_FULL - sends notification)
+/dustbins/bin1/level = 8   (FULL - sends notification)
+```
+
+### 3. Verify Notifications
+
+- **App Open**: Alert popup appears
+- **App Closed**: Notification in Android notification center
+- **Server Logs**: Shows notification sent
+
+---
+
+## 🛠️ Useful Commands
+
+### Clean Install
+```powershell
+Remove-Item node_modules -Recurse -Force
+Remove-Item package-lock.json -Force
+npm install --legacy-peer-deps
+```
+
+### Restart Everything
+```powershell
+# Kill all Node processes
+Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+
+# Restart Metro
 npm start
 
-# OR using Yarn
-yarn start
+# New terminal - Restart Server
+$env:FIREBASE_DATABASE_URL = "https://your-project-id-default-rtdb.firebaseio.com"
+node server.js
+
+# New terminal - Restart App
+$env:JAVA_HOME = "C:\Program Files\Microsoft\jdk-17.0.18.8-hotspot"
+npx react-native run-android
 ```
 
-## Step 2: Build and run your app
-
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
-
-### Android
-
-```sh
-# Using npm
-npm run android
-
-# OR using Yarn
-yarn android
+### Check Running Processes
+```powershell
+Get-Process node
 ```
 
-### iOS
-
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
-
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
-
-```sh
-bundle install
+### View Android Logs
+```powershell
+adb logcat | Select-String "FirebaseTableApp"
 ```
 
-Then, and every time you update your native dependencies, run:
+---
 
-```sh
-bundle exec pod install
-```
+## 📞 Support
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+For issues or questions, check:
+1. Firebase Console → Realtime Database (verify data structure)
+2. Server terminal logs (check for errors)
+3. Metro bundler terminal (check for build errors)
+4. Android Logcat (check for runtime errors)
 
-```sh
-# Using npm
-npm run ios
+---
 
-# OR using Yarn
-yarn ios
-```
+## 📝 License
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
+This project is for educational/capstone purposes.
 
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
+---
 
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+**Version**: 1.0.0  
+**Last Updated**: February 2026
